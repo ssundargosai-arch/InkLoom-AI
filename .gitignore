@@ -27,3 +27,6 @@ frontend/dist/
 *.bak
 *.before_button_fix
 app_backup_*.py
+
+# Local frontend environment
+frontend/.env
