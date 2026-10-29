@@ -18,6 +18,7 @@
 # Frontend dependencies and generated builds
 frontend/node_modules/
 frontend/dist/
+frontend/.vite/
 
 # Local editor / OS files
 .DS_Store
@@ -27,6 +28,3 @@ frontend/dist/
 *.bak
 *.before_button_fix
 app_backup_*.py
-
-# Local frontend environment
-frontend/.env
