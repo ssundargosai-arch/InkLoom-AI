@@ -44,7 +44,14 @@ class FindingRead(BaseModel):
     status: str
     review_status: str
     claim: Optional[str] = None
+    claim_start: Optional[int] = None
+    claim_end: Optional[int] = None
+    detection_method: Optional[str] = None
     verification_status: Optional[str] = None
+    evidence_status: Optional[str] = None
     citations: List[Dict[str, Any]] = Field(default_factory=list)
     verification_explanation: Optional[str] = None
     verification_confidence: Optional[float] = None
+    evidence_reason: Optional[str] = None
+    evidence_strength: Optional[float] = None
+    visual_data: Optional[Dict[str, Any]] = None

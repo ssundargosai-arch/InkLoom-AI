@@ -8,10 +8,18 @@ const severityStyles = {
 };
 const statusStyles = {
   pending: "bg-amber-50 text-amber-700",
+  draft: "bg-slate-100 text-slate-600",
   in_review: "bg-violet-50 text-violet-700",
   approved: "bg-emerald-50 text-emerald-700",
   changes_requested: "bg-rose-50 text-rose-700",
   open: "bg-slate-100 text-slate-600",
+  current: "bg-emerald-50 text-emerald-700",
+  expiring_soon: "bg-amber-50 text-amber-700",
+  review_overdue: "bg-rose-50 text-rose-700",
+  expired: "bg-rose-50 text-rose-700",
+  not_yet_valid: "bg-amber-50 text-amber-700",
+  inactive: "bg-slate-100 text-slate-600",
+  rejected: "bg-rose-50 text-rose-700",
 };
 
 export function Badge({ children, tone = "neutral" }) {

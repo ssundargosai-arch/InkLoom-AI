@@ -57,6 +57,17 @@ test("refuses to insert promotional claim instructions into draft text", () => {
   );
 });
 
+test("refuses automatic replacement for brand voice suggestions", () => {
+  assert.deepEqual(
+    getSafeReplacement(
+      "gonna",
+      "Review this wording manually against the intended voice.",
+      "brand_voice",
+    ),
+    { ok: false, reason: "manual-edit-required" },
+  );
+});
+
 test("refuses terminology guidance without an explicit replacement", () => {
   assert.deepEqual(
     getSafeReplacement(

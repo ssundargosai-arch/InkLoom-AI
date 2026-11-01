@@ -16,6 +16,12 @@ class ContentReview(Base):
     content_type: Mapped[str] = mapped_column(String(80), nullable=False, default="text")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     reviewer: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    submitted_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    assigned_reviewer_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     guideline_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     analysis_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -40,6 +46,32 @@ class ContentReview(Base):
         back_populates="review",
         cascade="all, delete-orphan",
         order_by="ReviewAnalysisRun.id",
+    )
+    assigned_reviewer = relationship("User", foreign_keys=[assigned_reviewer_id])
+    submitted_by = relationship("User", foreign_keys=[submitted_by_id])
+    reviewer_assignments = relationship(
+        "ReviewAssignment",
+        back_populates="review",
+        cascade="all, delete-orphan",
+        order_by="ReviewAssignment.stage_number, ReviewAssignment.id",
+    )
+    approval_decisions = relationship(
+        "ReviewApprovalDecision",
+        back_populates="review",
+        cascade="all, delete-orphan",
+        order_by="ReviewApprovalDecision.id",
+    )
+    approval_bypasses = relationship(
+        "ReviewApprovalBypass",
+        back_populates="review",
+        cascade="all, delete-orphan",
+        order_by="ReviewApprovalBypass.id",
+    )
+    visual_attachment = relationship(
+        "ReviewVisualAttachment",
+        back_populates="review",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
 
@@ -72,11 +104,15 @@ class ReviewRevision(Base):
     review_id: Mapped[int] = mapped_column(ForeignKey("content_reviews.id"), index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
+    author_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     review: Mapped[ContentReview] = relationship(back_populates="revisions")
+    author = relationship("User", foreign_keys=[author_id])
 
 
 class ReviewAnalysisRun(Base):

@@ -28,7 +28,8 @@ Mock mode is off by default. Set `VITE_MOCK_API=true` to use the isolated `src/s
 
 Requests are centralized in `src/services/api.js` and use the documented endpoints:
 
-- `GET /api/health`, `GET/POST/DELETE /api/guidelines`
+- `GET /api/health`, `GET/POST/PATCH/DELETE /api/guidelines`
+- Admin/Reviewer `GET /api/guidelines/diagnostics` and `GET /api/guidelines/brand-voice`; Admin-only `PUT /api/guidelines/brand-voice` and `GET /api/guidelines/brand-voice/versions`
 - `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/password`
 - `POST /api/auth/password/forgot`, `POST /api/auth/password/reset`
 - Public `POST /api/auth/invitations/accept` (single-use invitation token from the email fragment)
@@ -51,7 +52,8 @@ Analysis supports selecting evidence sources approved by an Admin or Reviewer an
 ## Known limitations
 
 - Authentication uses the backend's invite-only local account flow and role checks. The bootstrap Admin is provisioned from environment configuration only on an empty user database. Admin-created invitations expire after 48 hours and can be used once; members set their own password before activation. Public self-registration is disabled. Explicitly configured mock mode disables authentication and must not be treated as a secured environment.
-- Guideline edit is unavailable because the agreed API contract has no update endpoint.
+- Guideline creation, editing, activation and version history are Admin-only. Guideline diagnostics are deterministic, read-only suggestions; they cover only narrow patterns and do not infer conflicts from category alone.
+- Brand Voice checks use explicit configured prohibited expressions and a narrow formal/professional tone heuristic. Tone results are advisory; audience/channel labels and arbitrary messaging principles do not create inferred rules. Existing reviews retain their analysis until explicitly reanalyzed.
 - OCR requires the backend `OCR_ENABLED=true` setting and an installed Tesseract executable.
 - Real-time presence and updates use WebSockets and are limited to a single backend process.
 - Shared draft edits are ephemeral until an explicit revision save.

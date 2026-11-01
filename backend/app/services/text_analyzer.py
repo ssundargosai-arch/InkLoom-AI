@@ -1,13 +1,13 @@
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Sequence
 
 from app.models.brand_guideline import BrandGuideline
 from app.services.claim_checker import (
     check_promotional_claims,
-    factual_claim_excerpt,
-    factual_claim_excerpts,
+    factual_claim_spans,
 )
+from app.services.brand_voice_checker import check_brand_voice
 from app.services.suggestion_engine import (
     claim_suggestion,
     factual_suggestion,
@@ -27,13 +27,25 @@ def _term_pattern(term: str) -> re.Pattern:
 
 
 def _source_is_expired(source: dict) -> bool:
-    expiry = source.get("expiry_date")
+    expiry = source.get("valid_until") or source.get("expiry_date")
     if not expiry:
         return False
     try:
-        return date.fromisoformat(str(expiry)[:10]) < date.today()
+        return date.fromisoformat(str(expiry)[:10]) < datetime.now(timezone.utc).date()
     except ValueError:
         return False
+
+
+def _source_is_future(source: dict) -> bool:
+    valid_from = source.get("valid_from") or source.get("source_date")
+    if not valid_from:
+        return False
+    try:
+        return date.fromisoformat(str(valid_from)[:10]) > datetime.now(timezone.utc).date()
+    except ValueError:
+        return False
+
+
 
 
 def _factual_guideline(
@@ -42,104 +54,126 @@ def _factual_guideline(
     evidence_matches: Optional[Sequence[dict]] = None,
     excerpt_override: Optional[str] = None,
 ) -> Optional[tuple]:
-    excerpt = excerpt_override or factual_claim_excerpt(text)
+    excerpt = excerpt_override
     if not excerpt:
         return None
-    evidence_matches = evidence_matches or []
-    if evidence_matches:
-        current_matches = [
-            item for item in evidence_matches if item.get("freshness") == "current"
-        ]
-        undated_matches = [
-            item for item in evidence_matches if item.get("freshness") == "no_expiry_date"
-        ]
-        unknown_date_matches = [
-            item for item in evidence_matches if item.get("freshness") == "unknown"
-        ]
-        selected = (
-            current_matches
-            or undated_matches
-            or unknown_date_matches
-            or list(evidence_matches)
-        )
-        source_names = ", ".join(str(item.get("name") or "approved source") for item in selected)
-        guideline_ids = [
-            item.get("guideline_id")
-            for item in selected
-            if item.get("guideline_id") is not None
-        ]
-        if current_matches or undated_matches:
-            freshness_note = (
-                "A current approved source excerpt matched this statement"
-                if current_matches
-                else "An approved source excerpt with no recorded expiry date matched this statement"
-            )
-            return (
-                excerpt,
-                "{} ({}). Compare exact scope and context before publication; "
-                "this match is not verification.".format(freshness_note, source_names),
-                guideline_ids[0] if guideline_ids else None,
-                source_names,
-            )
-        if unknown_date_matches:
-            return (
-                excerpt,
-                "A result from a configured trusted source may be relevant ({}). "
-                "Confirm the source and claim context before publication."
-                .format(source_names),
-                guideline_ids[0] if guideline_ids else None,
-                source_names,
-            )
-        return (
-            excerpt,
-            "Only expired approved source material matched this statement ({}). "
-            "Verify against a current source before publication."
-            .format(source_names),
-            guideline_ids[0] if guideline_ids else None,
-            source_names,
-        )
+
     relevant = [
         item
         for item in guidelines
-        if any(word in item.category.lower() for word in ("fact", "evidence", "source"))
+        if any(
+            word in item.category.lower()
+            for word in ("fact", "evidence", "source")
+        )
     ]
+
     if not relevant:
-        relevant = [item for item in guidelines if "claim" in item.category.lower()]
+        relevant = [
+            item
+            for item in guidelines
+            if "claim" in item.category.lower()
+        ]
+
+    guideline_id = relevant[0].id if relevant else None
+    source_label = relevant[0].name if relevant else "Factual claim review"
+
+    # Retrieved evidence is a candidate, not automatic proof.
+    # Claim-level verification is performed separately.
+    if evidence_matches:
+        freshness_values = [
+            str(item.get("freshness", "unknown")).lower()
+            for item in evidence_matches
+        ]
+
+        if all(value == "expired" for value in freshness_values):
+            return (
+                excerpt,
+                (
+                    "Only expired approved source material matched. "
+                    "It cannot verify this claim. Check a current "
+                    "approved source before publication."
+                ),
+                guideline_id,
+                source_label,
+            )
+
+        return (
+            excerpt,
+            (
+                "Retrieved source candidates were found, but none has "
+                "established support through retrieval alone. "
+                "Claim-level verification is evaluated separately "
+                "against approved source content."
+            ),
+            guideline_id,
+            source_label,
+        )
+
     if not relevant:
         return (
             excerpt,
-            "No approved evidence guideline was selected for this potentially factual statement.",
+            (
+                "This potentially factual statement requires review. "
+                "No configured factual guideline or retrieved evidence "
+                "is available to establish support."
+            ),
             None,
-            "Unverified factual statement heuristic",
+            "Factual claim review",
         )
+
     for item in relevant:
-        expired = [source for source in item.approved_sources or [] if _source_is_expired(source)]
+        approved_sources = item.approved_sources or []
+
+        expired = [
+            source
+            for source in approved_sources
+            if _source_is_expired(source)
+        ]
+
         active = [
             source
-            for source in item.approved_sources or []
-            if source.get("name") and not _source_is_expired(source)
+            for source in approved_sources
+            if source.get("name")
+            and not _source_is_expired(source)
+            and not _source_is_future(source)
         ]
+
         if expired and not active:
-            source_names = ", ".join(source.get("name", "source") for source in expired)
+            source_names = ", ".join(
+                source.get("name", "source")
+                for source in expired
+            )
             return (
                 excerpt,
-                "The configured evidence source may have expired ({}); verify the statement against a current source."
-                .format(source_names),
+                (
+                    "Configured evidence sources may have expired "
+                    "({}). Verify this statement against a current "
+                    "approved source."
+                ).format(source_names),
                 item.id,
                 item.name,
             )
+
         if not active:
             return (
                 excerpt,
-                "No current approved evidence source is configured for this guideline.",
+                (
+                    "No current approved evidence source is configured "
+                    "for this guideline."
+                ),
                 item.id,
                 item.name,
             )
+
     names = ", ".join(item.name for item in relevant)
+
     return (
         excerpt,
-        "Approved evidence references are configured ({}), but no matching approved-source excerpt was found for this statement."
-        .format(names),
+        (
+            "Approved evidence sources are configured ({}), but "
+            "retrieval has not established support for this claim. "
+            "Review exact source scope and context."
+        ).format(names),
         relevant[0].id,
         relevant[0].name,
     )
@@ -152,6 +186,7 @@ def analyze_text(
     alt_text: Optional[str] = None,
     evidence_matches: Optional[Sequence[dict]] = None,
     evidence_by_claim: Optional[Dict[str, Sequence[dict]]] = None,
+    brand_voice_configuration: Optional[Dict[str, object]] = None,
 ) -> List[Dict[str, object]]:
     findings: List[Dict[str, object]] = []
 
@@ -193,14 +228,12 @@ def analyze_text(
                 finding["guideline"] = claim_guideline.name
                 finding["guideline_id"] = claim_guideline.id
 
-    for excerpt in factual_claim_excerpts(text):
+    for factual_claim in factual_claim_spans(text):
+        excerpt = str(factual_claim["matched_text"])
         if any(
             finding["category"] == "unsupported_claim"
             and finding["matched_text"]
-            and (
-                excerpt.casefold() in str(finding["matched_text"]).casefold()
-                or str(finding["matched_text"]).casefold() in excerpt.casefold()
-            )
+            and excerpt.casefold() == str(finding["matched_text"]).casefold()
             for finding in findings
         ):
             continue
@@ -216,6 +249,7 @@ def analyze_text(
         )
         if factual:
             _excerpt, explanation, guideline_id, source = factual
+            start = int(factual_claim["claim_start"])
             findings.append(
                 {
                     "category": "factual_claim",
@@ -223,6 +257,9 @@ def analyze_text(
                     "title": "Verify factual statement",
                     "explanation": explanation,
                     "matched_text": excerpt,
+                    "claim": excerpt,
+                    "claim_start": start if start >= 0 else None,
+                    "claim_end": int(factual_claim["claim_end"]),
                     "suggestion": factual_suggestion(),
                     "source": source,
                     "guideline": source,
@@ -263,5 +300,7 @@ def analyze_text(
                 "confidence": 0.9,
             }
         )
+
+    check_brand_voice(text, brand_voice_configuration, findings)
 
     return findings

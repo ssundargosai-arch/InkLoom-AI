@@ -15,6 +15,7 @@ const ReviewDetailPage = lazy(() => import("./pages/ReviewDetailPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const SourcesPage = lazy(() => import("./pages/SourcesPage"));
+const VisualAssetsPage = lazy(() => import("./pages/VisualAssetsPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -67,6 +68,7 @@ export default function App() {
             />
             <Route path="guidelines" element={<GuidelinesPage />} />
             <Route path="sources" element={<SourcesPage />} />
+            <Route path="visual-assets" element={<VisualAssetsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
 

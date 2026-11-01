@@ -1,16 +1,46 @@
+import asyncio
+from contextlib import suppress
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Engine, event
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.types import ASGIApp
 
-from app.config import API_VERSION, CORS_ORIGINS
-from app.database import Base, engine, get_db, migrate_source_approval
+from app.config import (
+    API_VERSION,
+    CORS_ORIGINS,
+    FRESHNESS_CHECK_INTERVAL_SECONDS,
+)
+from app.database import (
+    Base,
+    engine,
+    get_db,
+    migrate_guidelines_and_sources,
+    migrate_review_workflow,
+    migrate_review_json_columns,
+    migrate_source_approval,
+    migrate_temporal_freshness,
+    migrate_secure_publish,
+    migrate_brand_voice,
+)
 from app.models import BrandGuideline
-from app.routes import analytics, analysis, auth, guidelines, health, reviews, sources
+from app.routes import (
+    analytics,
+    analysis,
+    auth,
+    guidelines,
+    health,
+    reviews,
+    sources,
+    freshness,
+    visual_assets,
+)
 from app.services.auth_service import bootstrap_admin
+from app.services.freshness_service import run_freshness_scheduler
 
 SEED_GUIDELINES = [
     {
@@ -45,7 +75,7 @@ def _enable_sqlite_foreign_keys(target_engine: Engine) -> None:
         cursor.close()
 
 
-def create_app(database_engine: Engine = engine) -> FastAPI:
+def create_app(database_engine: Engine = engine) -> ASGIApp:
     _enable_sqlite_foreign_keys(database_engine)
     local_sessions = sessionmaker(
         bind=database_engine, autoflush=False, autocommit=False
@@ -55,16 +85,38 @@ def create_app(database_engine: Engine = engine) -> FastAPI:
     async def lifespan(_app: FastAPI):
         Base.metadata.create_all(bind=database_engine)
         migrate_source_approval(database_engine)
+        migrate_review_workflow(database_engine)
+        migrate_review_json_columns(database_engine)
+        migrate_guidelines_and_sources(database_engine)
+        migrate_temporal_freshness(database_engine)
+        migrate_secure_publish(database_engine)
+        migrate_brand_voice(database_engine)
         db = local_sessions()
         try:
             if db.query(BrandGuideline).count() == 0:
                 for item in SEED_GUIDELINES:
-                    db.add(BrandGuideline(**item, is_seed=True))
+                    db.add(
+                        BrandGuideline(
+                            **item,
+                            is_seed=True,
+                            last_reviewed_at=datetime.now(timezone.utc),
+                        )
+                    )
                 db.commit()
             bootstrap_admin(db)
         finally:
             db.close()
-        yield
+        scheduler_task = asyncio.create_task(
+            run_freshness_scheduler(
+                local_sessions, FRESHNESS_CHECK_INTERVAL_SECONDS
+            )
+        )
+        try:
+            yield
+        finally:
+            scheduler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await scheduler_task
 
     app = FastAPI(
         title="InkLoom AI API",
@@ -75,14 +127,6 @@ def create_app(database_engine: Engine = engine) -> FastAPI:
         version=API_VERSION,
         lifespan=lifespan,
     )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Reviewer"],
-    )
-
     @app.middleware("http")
     async def validate_session_request_origin(request, call_next):
         if (
@@ -110,8 +154,16 @@ def create_app(database_engine: Engine = engine) -> FastAPI:
     app.include_router(analysis.router)
     app.include_router(reviews.router)
     app.include_router(sources.router)
+    app.include_router(freshness.router)
+    app.include_router(visual_assets.router)
     app.include_router(analytics.router)
-    return app
+    return CORSMiddleware(
+        app=app,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Reviewer"],
+    )
 
 
 app = create_app()

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.config import API_VERSION, BRAND_ASSET_REFERENCES, EMBEDDING_MODEL
+from app.config import API_VERSION, BRAND_ASSET_REFERENCES, EMBEDDINGS_ENABLED
 from app.config import AUTH_COOKIE_SECURE, BOOTSTRAP_ADMIN_EMAIL
 from app.config import (
     BRAND_PALETTE,
@@ -27,9 +27,9 @@ def health():
         "password_recovery_enabled": SMTP_ENABLED,
         "analysis_mode": "rules+configured_llm" if llm_enabled() else "rules",
         "evidence_retrieval_mode": (
-            "embedding_cosine" if EMBEDDING_MODEL else "bm25_lexical"
+            "embedding_cosine" if EMBEDDINGS_ENABLED else "bm25_lexical"
         ),
-        "embedding_model_configured": bool(EMBEDDING_MODEL),
+        "embedding_model_configured": EMBEDDINGS_ENABLED,
         "external_fact_check_configured": FACT_CHECK_ENABLED,
         "external_fact_check_provider": FACT_CHECK_PROVIDER or None,
         "trusted_source_domains": list(TRUSTED_SOURCE_DOMAINS),

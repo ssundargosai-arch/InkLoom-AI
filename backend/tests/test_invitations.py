@@ -1,5 +1,6 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from sqlalchemy.orm import Session
@@ -31,6 +32,14 @@ def issue_invitation(client, monkeypatch, email="member@example.test", role="rev
     return response, sent
 
 
+def _token_from_link(link):
+    parsed = urlsplit(link)
+    return (
+        parse_qs(parsed.query).get("token", [None])[0]
+        or parse_qs(parsed.fragment).get("token", [None])[0]
+    )
+
+
 @pytest.mark.parametrize("role", ["admin", "reviewer", "contributor"])
 def test_admin_invitation_creates_inactive_account_and_hashed_token(
     client, test_engine, monkeypatch, role
@@ -49,9 +58,9 @@ def test_admin_invitation_creates_inactive_account_and_hashed_token(
     assert "token=" not in response.text
     assert sent[0][0:2] == ("new-member@example.test", "Workspace Member")
     assert sent[0][2].startswith(
-        "http://localhost:5173/accept-invitation#token="
+        "http://localhost:5173/accept-invitation?token="
     )
-    raw_token = sent[0][2].split("token=", 1)[1]
+    raw_token = _token_from_link(sent[0][2])
 
     with Session(test_engine) as db:
         invited = db.query(User).filter_by(email="new-member@example.test").one()
@@ -128,7 +137,7 @@ def test_invitation_expiry_resend_and_single_use(client, test_engine, monkeypatc
 
     response, sent = issue_invitation(client, monkeypatch)
     user_id = response.json()["user"]["id"]
-    expired_token = sent[0][2].split("token=", 1)[1]
+    expired_token = _token_from_link(sent[0][2])
     with Session(test_engine) as db:
         invitation = db.query(UserInvitation).filter_by(user_id=user_id).one()
         invitation.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
@@ -151,7 +160,7 @@ def test_invitation_expiry_resend_and_single_use(client, test_engine, monkeypatc
     )
     resent = client.post(f"/api/auth/users/{user_id}/invitation")
     assert resent.status_code == 202
-    replacement_token = new_delivery[0][2].split("token=", 1)[1]
+    replacement_token = _token_from_link(new_delivery[0][2])
     assert replacement_token != expired_token
     assert client.post(
         "/api/auth/invitations/accept",
@@ -185,7 +194,7 @@ def test_invited_member_cannot_assign_role_or_use_admin_endpoints(
     client, monkeypatch
 ):
     response, sent = issue_invitation(client, monkeypatch, role="reviewer")
-    token = sent[0][2].split("token=", 1)[1]
+    token = _token_from_link(sent[0][2])
     payload = {
         "token": token,
         "new_password": "member-password-long-123",
@@ -212,6 +221,38 @@ def test_invited_member_cannot_assign_role_or_use_admin_endpoints(
             "role": "admin",
         },
     ).status_code == 403
+
+
+def test_generated_query_invitation_url_token_is_accepted(client, monkeypatch):
+    response, sent = issue_invitation(
+        client,
+        monkeypatch,
+        email="query-invitation@example.test",
+        role="reviewer",
+    )
+    link = urlsplit(sent[0][2])
+    assert link.path == "/accept-invitation"
+    assert link.fragment == ""
+    token = _token_from_link(sent[0][2])
+    assert token
+
+    accepted = client.post(
+        "/api/auth/invitations/accept",
+        json={
+            "token": token,
+            "new_password": "reviewer-password-long-123",
+        },
+    )
+    assert accepted.status_code == 200
+    member = client.post(
+        "/api/auth/login",
+        json={
+            "email": "query-invitation@example.test",
+            "password": "reviewer-password-long-123",
+        },
+    )
+    assert member.status_code == 200
+    assert member.json()["user"]["role"] == "reviewer"
 
 
 def test_invitation_validation_duplicate_email_and_admin_activation_guard(

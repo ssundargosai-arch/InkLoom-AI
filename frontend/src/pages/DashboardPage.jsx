@@ -3,10 +3,12 @@ import { ArrowRight, CircleAlert, FileCheck2, FilePlus2, ShieldAlert, TrendingUp
 import { Link } from "react-router-dom";
 import { api, errorMessage, unwrapList } from "../services/api";
 import { Badge, EmptyState, ErrorState, LoadingState, PageHeader } from "../components/common/UI";
+import { getTimeBasedGreeting } from "../utils/timeGreeting";
 
 const Metric = ({ label, value, note, icon: Icon, color }) => <div className="card p-5"><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-3 text-3xl font-bold tracking-tight text-ink-900">{value ?? "—"}</p><p className="mt-1 text-xs text-slate-400">{note}</p></div><div className={`rounded-xl p-2.5 ${color}`}><Icon size={19} /></div></div></div>;
 
 export default function DashboardPage() {
+  const [greeting, setGreeting] = useState(() => getTimeBasedGreeting());
   const [reviews, setReviews] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [error, setError] = useState("");
@@ -21,10 +23,33 @@ export default function DashboardPage() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let timeoutId;
+    const updateGreeting = () => {
+      setGreeting(getTimeBasedGreeting());
+      timeoutId = window.setTimeout(
+        updateGreeting,
+        60_000 - (Date.now() % 60_000) + 10,
+      );
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        window.clearTimeout(timeoutId);
+        updateGreeting();
+      }
+    };
+
+    updateGreeting();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
   const severity = analytics?.issues_by_severity || {};
   const common = analytics?.frequent_guidelines || analytics?.most_common_violations || [];
   return <>
-    <PageHeader eyebrow="Overview" title="Good morning" description="Keep every piece of content confidently on-brand." action={<Link to="/content/new" className="btn-primary"><FilePlus2 size={17} />New content review</Link>} />
+    <PageHeader eyebrow="Overview" title={greeting} description="Keep every piece of content confidently on-brand." action={<Link to="/content/new" className="btn-primary"><FilePlus2 size={17} />New content review</Link>} />
     {error && <div className="mb-5"><ErrorState message={error} onRetry={load} /></div>}
     {loading ? <LoadingState label="Loading workspace overview..." /> : <>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Workspace metrics">

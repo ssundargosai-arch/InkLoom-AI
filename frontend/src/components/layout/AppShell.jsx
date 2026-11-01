@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { Activity, BookOpenText, CheckCheck, ChevronLeft, ChevronRight, FileText, LayoutDashboard, LogOut, Menu, Settings2, ShieldCheck, X, LibraryBig, Users } from "lucide-react";
+import { Activity, BookOpenText, CheckCheck, ChevronLeft, ChevronRight, FileText, LayoutDashboard, LogOut, Menu, Settings2, ShieldCheck, X, LibraryBig, Users, Images } from "lucide-react";
 import { MOCK_MODE } from "../../services/api";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -10,6 +10,7 @@ const links = [
   { to: "/reviews", label: "Review queue", icon: CheckCheck },
   { to: "/guidelines", label: "Brand guidelines", icon: BookOpenText },
   { to: "/sources", label: "Evidence sources", icon: LibraryBig },
+  { to: "/visual-assets", label: "Visual assets", icon: Images },
   { to: "/analytics", label: "Analytics", icon: Activity },
 ];
 

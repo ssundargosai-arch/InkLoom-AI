@@ -1,22 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { KeyRound } from "lucide-react";
 import { api, errorMessage } from "../services/api";
 import { ErrorMessage } from "../components/common/UI";
-
-function takeTokenFromFragment() {
-  const token = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
-  if (token) window.history.replaceState(null, "", window.location.pathname);
-  return token;
-}
+import {
+  getInvitationToken,
+  removeInvitationTokenFromUrl,
+} from "../utils/invitationToken";
 
 export default function AcceptInvitationPage() {
-  const [token] = useState(takeTokenFromFragment);
+  const [token] = useState(() =>
+    getInvitationToken(window.location.search, window.location.hash),
+  );
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
+
+  useEffect(() => {
+    const safeUrl = removeInvitationTokenFromUrl(window.location.href);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (safeUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, "", safeUrl);
+    }
+  }, []);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -30,7 +38,11 @@ export default function AcceptInvitationPage() {
       await api.acceptInvitation(token, password);
       setComplete(true);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(
+        [400, 422].includes(err?.status)
+          ? "This invitation link is invalid or expired. Ask your workspace administrator to send a new invitation."
+          : errorMessage(err),
+      );
     } finally {
       setBusy(false);
     }
@@ -45,7 +57,7 @@ export default function AcceptInvitationPage() {
         <Link className="btn-primary mt-5 w-full justify-center" to="/login">Continue to sign in</Link>
       </div> : <>
         <p className="mt-1 text-sm leading-6 text-slate-500">Set a password to activate your InkLoom workspace account. Passwords must be at least 12 characters.</p>
-        {!token && <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">The invitation link is missing. Ask your workspace administrator to send a new invitation.</p>}
+        {!token && <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">The invitation link is missing or malformed. Ask your workspace administrator to send a new invitation.</p>}
         {error && <div className="mt-5"><ErrorMessage>{error}</ErrorMessage></div>}
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div><label className="mb-1.5 block text-sm font-medium text-slate-700" htmlFor="invite-password">Create password</label><input id="invite-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} className="field" /></div>

@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlencode
 
 from sqlalchemy.orm import Session
 
@@ -38,7 +39,10 @@ def create_invitation(
 
 
 def invitation_link(token: str) -> str:
-    return "{}/accept-invitation#token={}".format(PASSWORD_RESET_BASE_URL, token)
+    return "{}/accept-invitation?{}".format(
+        PASSWORD_RESET_BASE_URL,
+        urlencode({"token": token}),
+    )
 
 
 def send_invitation_email(email: str, display_name: str, link: str) -> None:

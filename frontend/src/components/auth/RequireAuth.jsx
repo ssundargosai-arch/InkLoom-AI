@@ -1,3 +1,4 @@
+import React from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { LoadingState } from "../common/UI";
 import { useAuth } from "../../contexts/AuthContext";

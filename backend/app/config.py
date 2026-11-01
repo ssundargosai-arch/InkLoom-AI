@@ -1,6 +1,7 @@
 import os
 import re
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
@@ -22,26 +23,62 @@ def _integer_setting(name: str, default: int, minimum: int) -> int:
         return default
 
 
+def _validated_integer_setting(
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: Optional[int] = None,
+) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("{} must be an integer.".format(name)) from exc
+    if value < minimum or (maximum is not None and value > maximum):
+        bound = (
+            "between {} and {}".format(minimum, maximum)
+            if maximum is not None
+            else "at least {}".format(minimum)
+        )
+        raise ValueError("{} must be {}.".format(name, bound))
+    return value
+
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./inkloom.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
-CORS_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-    ).split(",")
+_LOCAL_FRONTEND_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
+_configured_cors_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
     if origin.strip()
 ]
+if "*" in _configured_cors_origins:
+    raise ValueError(
+        "CORS_ORIGINS must list explicit origins; wildcard origins are not allowed."
+    )
+CORS_ORIGINS = list(
+    dict.fromkeys((*_LOCAL_FRONTEND_ORIGINS, *_configured_cors_origins))
+)
 MAX_CONTENT_LENGTH = _integer_setting("MAX_CONTENT_LENGTH", 100_000, 1)
 MAX_UPLOAD_SIZE = _integer_setting("MAX_UPLOAD_SIZE", 10 * 1024 * 1024, 1)
 MAX_SOURCE_UPLOAD_SIZE = _integer_setting("MAX_SOURCE_UPLOAD_SIZE", 10 * 1024 * 1024, 1)
 MAX_SOURCE_LENGTH = _integer_setting("MAX_SOURCE_LENGTH", 200_000, 1)
 OCR_ENABLED = os.getenv("OCR_ENABLED", "false").lower() == "true"
-LLM_API_BASE_URL = os.getenv("LLM_API_BASE_URL", "").rstrip("/")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "")
+LLM_API_BASE_URL = os.getenv("LLM_API_BASE_URL", "").strip().rstrip("/")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+GEMINI_REQUEST_TIMEOUT_SECONDS = _validated_integer_setting(
+    "GEMINI_REQUEST_TIMEOUT_SECONDS", 90, 1, 300
+)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "").strip()
 FACT_CHECK_PROVIDER = os.getenv("FACT_CHECK_PROVIDER", "").strip().lower()
 FACT_CHECK_API_KEY = os.getenv("FACT_CHECK_API_KEY", "").strip()
@@ -68,8 +105,12 @@ BRAND_PALETTE = [
     for color in os.getenv("BRAND_PALETTE", "").split(",")
     if color.strip()
 ]
-PALETTE_TOLERANCE = _integer_setting("PALETTE_TOLERANCE", 36, 0)
-MAX_IMAGE_PIXELS = _integer_setting("MAX_IMAGE_PIXELS", 40_000_000, 1)
+PALETTE_TOLERANCE = _validated_integer_setting(
+    "PALETTE_TOLERANCE", 36, 0, 441
+)
+MAX_IMAGE_PIXELS = _validated_integer_setting(
+    "MAX_IMAGE_PIXELS", 40_000_000, 1
+)
 BRAND_ASSET_REFERENCES = [
     path.strip()
     for path in os.getenv("BRAND_ASSET_REFERENCE_PATHS", "").split(",")
@@ -82,15 +123,40 @@ if len(BRAND_ASSET_REFERENCES) > 5:
     raise ValueError("Configure no more than five BRAND_ASSET_REFERENCE_PATHS.")
 if BRAND_ASSET_SIMILARITY_THRESHOLD > 100:
     raise ValueError("BRAND_ASSET_SIMILARITY_THRESHOLD must be between 0 and 100.")
-if PALETTE_TOLERANCE > 441:
-    raise ValueError("PALETTE_TOLERANCE must be between 0 and 441.")
 if any(not re.fullmatch(r"#?[0-9A-Fa-f]{6}", color) for color in BRAND_PALETTE):
     raise ValueError("BRAND_PALETTE entries must be six-digit hex colours.")
 _llm_settings = [
-    os.getenv("LLM_API_BASE_URL", "").strip(),
-    os.getenv("LLM_API_KEY", "").strip(),
-    os.getenv("LLM_MODEL", "").strip(),
+    LLM_API_BASE_URL,
+    LLM_API_KEY,
+    LLM_MODEL,
 ]
+if LLM_PROVIDER not in {"openai", "gemini"}:
+    raise ValueError("LLM_PROVIDER must be 'openai' or 'gemini'.")
+if LLM_API_BASE_URL:
+    llm_base_url = urlsplit(LLM_API_BASE_URL)
+    if (
+        llm_base_url.scheme not in {"http", "https"}
+        or not llm_base_url.hostname
+        or llm_base_url.username
+        or llm_base_url.password
+        or llm_base_url.query
+        or llm_base_url.fragment
+    ):
+        raise ValueError(
+            "LLM_API_BASE_URL must be an HTTP or HTTPS base URL without credentials, query, or fragment."
+        )
+if LLM_PROVIDER == "gemini":
+    gemini_base_url = urlsplit(LLM_API_BASE_URL)
+    if (
+        gemini_base_url.scheme != "https"
+        or gemini_base_url.hostname != "generativelanguage.googleapis.com"
+        or gemini_base_url.path != "/v1beta"
+    ):
+        raise ValueError(
+            "Gemini LLM_API_BASE_URL must be https://generativelanguage.googleapis.com/v1beta."
+        )
+    if LLM_MODEL and not re.fullmatch(r"gemini-[A-Za-z0-9._-]+", LLM_MODEL):
+        raise ValueError("Gemini LLM_MODEL must be a Gemini model ID.")
 if LLM_MODEL and not all(_llm_settings):
     raise ValueError(
         "LLM_MODEL requires LLM_API_BASE_URL and LLM_API_KEY."
@@ -104,8 +170,33 @@ if EMBEDDING_MODEL and not (LLM_API_BASE_URL and LLM_API_KEY):
 if (LLM_API_BASE_URL or LLM_API_KEY) and not (LLM_MODEL or EMBEDDING_MODEL):
     raise ValueError("Configure LLM_MODEL or EMBEDDING_MODEL to use the provider.")
 LLM_ENABLED = bool(LLM_MODEL)
-EMBEDDINGS_ENABLED = bool(EMBEDDING_MODEL)
-MAX_RETRIEVAL_CHUNKS = _integer_setting("MAX_RETRIEVAL_CHUNKS", 200, 1)
+EMBEDDINGS_ENABLED = bool(EMBEDDING_MODEL and LLM_PROVIDER == "openai")
+MAX_RETRIEVAL_CHUNKS = _validated_integer_setting(
+    "MAX_RETRIEVAL_CHUNKS", 200, 1
+)
+FRESHNESS_CHECK_INTERVAL_SECONDS = _integer_setting(
+    "FRESHNESS_CHECK_INTERVAL_SECONDS", 86_400, 60
+)
+RISK_SEVERITY_WEIGHTS = {
+    "critical": _integer_setting("RISK_WEIGHT_CRITICAL", 30, 1),
+    "high": _integer_setting("RISK_WEIGHT_HIGH", 18, 1),
+    "medium": _integer_setting("RISK_WEIGHT_MEDIUM", 8, 1),
+    "low": _integer_setting("RISK_WEIGHT_LOW", 3, 1),
+}
+PUBLISH_RISK_THRESHOLDS = {
+    "medium": _integer_setting("PUBLISH_RISK_MEDIUM_THRESHOLD", 20, 0),
+    "high": _integer_setting("PUBLISH_RISK_HIGH_THRESHOLD", 45, 1),
+    "critical": _integer_setting("PUBLISH_RISK_CRITICAL_THRESHOLD", 70, 1),
+}
+if not (
+    PUBLISH_RISK_THRESHOLDS["medium"]
+    < PUBLISH_RISK_THRESHOLDS["high"]
+    < PUBLISH_RISK_THRESHOLDS["critical"]
+    <= 100
+):
+    raise ValueError(
+        "Publish risk thresholds must be increasing values no greater than 100."
+    )
 BOOTSTRAP_ADMIN_EMAIL = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
 BOOTSTRAP_ADMIN_PASSWORD = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 AUTH_COOKIE_NAME = "inkloom_session"
