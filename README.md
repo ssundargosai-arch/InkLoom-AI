@@ -80,3 +80,6 @@ npm run build
 - Before deployment, use HTTPS, set `AUTH_COOKIE_SECURE=true`, configure explicit trusted origins and secrets, and perform a deployment-specific security review.
 
 For full configuration, role descriptions, endpoint details, and known limitations, read [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend/README.md).
+
+For the single-origin Docker deployment on Render with persistent Neon
+PostgreSQL, follow [`DEPLOYMENT.md`](DEPLOYMENT.md).

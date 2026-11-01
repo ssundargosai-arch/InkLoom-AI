@@ -79,6 +79,41 @@ def test_missing_optional_provider_settings_preserve_local_fallback():
     }
 
 
+def test_explicit_cors_origins_replace_local_development_origins():
+    result = _run_config(
+        {"CORS_ORIGINS": "https://app.example.test"},
+        script="import json; import app.config as c; print(json.dumps(c.CORS_ORIGINS))",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == ["https://app.example.test"]
+
+
+def test_neon_postgres_url_uses_psycopg_and_preserves_required_ssl_mode():
+    result = _run_config(
+        {
+            "DATABASE_URL": (
+                "postgres://db.example.test/inkloom?sslmode=require"
+            )
+        },
+        script=(
+            "import json; import app.config as c; "
+            "from sqlalchemy.engine import make_url; "
+            "url = make_url(c.DATABASE_URL); "
+            "print(json.dumps({"
+            "'driver': url.drivername, "
+            "'sslmode': url.query.get('sslmode')"
+            "}))"
+        ),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "driver": "postgresql+psycopg",
+        "sslmode": "require",
+    }
+
+
 def test_optional_provider_and_visual_settings_parse_without_network_calls():
     result = _run_config(
         {

@@ -1,0 +1,17 @@
+.git
+.gitignore
+.vscode
+**/.env
+**/.env.*
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/node_modules
+**/dist
+**/*.log
+**/*.backup
+**/*~

@@ -2,10 +2,12 @@ import asyncio
 from contextlib import suppress
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.types import ASGIApp
@@ -62,6 +64,7 @@ SEED_GUIDELINES = [
         "severity": "medium",
     },
 ]
+FRONTEND_STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def _enable_sqlite_foreign_keys(target_engine: Engine) -> None:
@@ -75,7 +78,10 @@ def _enable_sqlite_foreign_keys(target_engine: Engine) -> None:
         cursor.close()
 
 
-def create_app(database_engine: Engine = engine) -> ASGIApp:
+def create_app(
+    database_engine: Engine = engine,
+    frontend_static_dir: Path = FRONTEND_STATIC_DIR,
+) -> ASGIApp:
     _enable_sqlite_foreign_keys(database_engine)
     local_sessions = sessionmaker(
         bind=database_engine, autoflush=False, autocommit=False
@@ -157,6 +163,41 @@ def create_app(database_engine: Engine = engine) -> ASGIApp:
     app.include_router(freshness.router)
     app.include_router(visual_assets.router)
     app.include_router(analytics.router)
+    static_root = frontend_static_dir.resolve()
+    index_file = static_root / "index.html"
+    assets_dir = static_root / "assets"
+    if index_file.is_file():
+        if assets_dir.is_dir():
+            app.mount(
+                "/assets",
+                StaticFiles(directory=str(assets_dir)),
+                name="frontend-assets",
+            )
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_frontend(full_path: str):
+            first_segment = full_path.partition("/")[0]
+            if first_segment in {
+                "api",
+                "docs",
+                "health",
+                "openapi.json",
+                "redoc",
+            }:
+                raise HTTPException(status_code=404, detail="Not Found")
+
+            requested_file = (static_root / full_path).resolve()
+            try:
+                requested_file.relative_to(static_root)
+            except ValueError:
+                raise HTTPException(status_code=404, detail="Not Found")
+
+            if requested_file.is_file():
+                return FileResponse(requested_file)
+            if Path(full_path).suffix:
+                raise HTTPException(status_code=404, detail="Not Found")
+            return FileResponse(index_file, media_type="text/html")
+
     return CORSMiddleware(
         app=app,
         allow_origins=CORS_ORIGINS,

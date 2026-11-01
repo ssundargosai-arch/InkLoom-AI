@@ -476,11 +476,12 @@ export default function ReviewDetailPage() {
 
     const connect = () => {
       if (!active) return;
-      const socketUrl = `${API_BASE_URL.replace(
-        /^http/,
-        "ws"
-      )}/api/reviews/${encodeURIComponent(reviewId)}/collaboration`;
-      socket = new WebSocket(socketUrl);
+      const socketUrl = new URL(
+        `${API_BASE_URL}/api/reviews/${encodeURIComponent(reviewId)}/collaboration`,
+        window.location.href
+      );
+      socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(socketUrl.toString());
       socketRef.current = socket;
 
       socket.onopen = () => {

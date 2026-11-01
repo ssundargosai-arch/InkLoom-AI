@@ -65,7 +65,7 @@ if "*" in _configured_cors_origins:
         "CORS_ORIGINS must list explicit origins; wildcard origins are not allowed."
     )
 CORS_ORIGINS = list(
-    dict.fromkeys((*_LOCAL_FRONTEND_ORIGINS, *_configured_cors_origins))
+    dict.fromkeys(_configured_cors_origins or _LOCAL_FRONTEND_ORIGINS)
 )
 MAX_CONTENT_LENGTH = _integer_setting("MAX_CONTENT_LENGTH", 100_000, 1)
 MAX_UPLOAD_SIZE = _integer_setting("MAX_UPLOAD_SIZE", 10 * 1024 * 1024, 1)

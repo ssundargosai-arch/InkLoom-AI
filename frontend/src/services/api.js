@@ -1,8 +1,13 @@
 
 import { mockApi } from "./mockApi";
 
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"
+  configuredApiBaseUrl !== undefined
+    ? configuredApiBaseUrl
+    : import.meta.env.PROD
+      ? ""
+      : "http://localhost:8000"
 ).replace(/\/$/, "");
 
 export const MOCK_MODE = import.meta.env.VITE_MOCK_API === "true";

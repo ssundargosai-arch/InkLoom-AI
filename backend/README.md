@@ -35,7 +35,7 @@ Authentication is enabled by default. On an empty user database, set `BOOTSTRAP_
 ## Configuration
 
 - `DATABASE_URL`: SQLAlchemy database URL; defaults to `sqlite:///./inkloom.db`.
-- `CORS_ORIGINS`: comma-separated explicit frontend origins, loaded from `backend/.env` unless already set in the process environment. The two local Vite origins (`http://localhost:5173` and `http://127.0.0.1:5173`) are always included; configured origins are added to them. Credentialed requests are enabled, so wildcard origins are rejected.
+- `CORS_ORIGINS`: comma-separated explicit frontend origins, loaded from `backend/.env` unless already set in the process environment. When configured, only those origins are allowed; when empty, the two local Vite origins (`http://localhost:5173` and `http://127.0.0.1:5173`) are used. Credentialed requests are enabled, so wildcard origins are rejected.
 - `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`: initial admin account for a new database; both are required together. Bootstrap will not add another admin once any account exists.
 - `AUTH_COOKIE_SECURE`: set `true` when served over HTTPS (default `false` for local HTTP development).
 - `AUTH_SESSION_HOURS`: absolute session lifetime in hours (default 12).
